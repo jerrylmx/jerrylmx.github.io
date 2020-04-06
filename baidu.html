@@ -1,0 +1,191 @@
+<!DOCTYPE html>  
+<html>  
+<head>  
+  <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />  
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />  
+  <title>Baidu Map </title>
+  <style type="text/css">  
+      html{height:100%}  
+      body{height:100%;margin:0px;padding:0px}  
+      #container{height:100%}  
+      .loader {
+        border: 10px solid #f3f3f3; /* Light grey */
+        border-top: 10px solid #3498db; /* Blue */
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        animation: spin 0.5s linear infinite;
+      }
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+  </style>  
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
+  <script type="text/javascript" src="http://api.map.baidu.com/api?v=2.0&ak=E4805d16520de693a3fe707cdc962045"></script>	
+</head>  
+<body>
+<div id="container"></div>
+<div style="position: absolute; top: 5px; left: 5px">
+  <label for="cars">选择地区:</label>
+  <select id="select">
+    <option value="1">列治文</option>
+    <option value="2">本那比/高贵林</option>
+  </select>
+</div>
+<div style="position: absolute; top: 45%; left: 48%" class="loader"></div>
+<script>
+  $(document).ready(function () {
+    var map = new BMap.Map("container");
+    var point = new BMap.Point(-123.120735, 49.2827);
+    map.centerAndZoom(point, 10);
+    map.enableScrollWheelZoom(true);
+    map.setMaxZoom(15);
+    map.setMinZoom(10);
+
+    $("#select").change(function() {
+      var selected = $(this).children("option:selected").val();
+      map.clearOverlays();
+      loadRegion(selected);
+    }); 
+
+    //map.clearOverlays()
+
+    let baseUrl = "https://www.realtor.ca";
+
+    let bbyPost = {
+      ZoomLevel: 12,
+      LatitudeMax: 49.30588,
+      LongitudeMax: -122.73353,
+      LatitudeMin: 49.20661,
+      LongitudeMin: -123.06347,
+      Sort: '1-A',
+      PropertyTypeGroupID: 1,
+      PropertySearchTypeId: 1,
+      TransactionTypeId: 2,
+      PriceMin: 1000000,
+      PriceMax: 1500000,
+      Currency: "CAD",
+      RecordsPerPage: 200,
+      ApplicationId: 1,
+      CultureId: 1,
+      CurrentPage: 1
+    }
+
+    let richmondPost = {
+      ZoomLevel: 12,
+      LatitudeMax: 49.20553,
+      LongitudeMax: -123.00303,
+      LatitudeMin: 49.10606,
+      LongitudeMin: -123.33296,
+      Sort: '1-A',
+      PropertyTypeGroupID: 1,
+      PropertySearchTypeId: 1,
+      TransactionTypeId: 2,
+      PriceMin: 1000000,
+      PriceMax: 1500000,
+      Currency: "CAD",
+      RecordsPerPage: 200,
+      ApplicationId: 1,
+      CultureId: 1,
+      CurrentPage: 1
+    }
+
+    let genMarker = (obj) => {
+      return new BMap.Marker(new BMap.Point(obj['Longitude'], obj['Latitude']))
+    }
+
+    let getPopup = (data) => {
+      let size = data.Building.SizeInterior;
+      let bd = data.Building.Bedrooms;
+      let bath = data.Building.BathroomTotal;
+      let type = data.Building.Type;
+      let photoUrl = (data['Property']['Photo'] && data['Property']['Photo'].length > 0)? 
+        data['Property']['Photo'][0].HighResPath : "";
+      return `
+       <table>
+        <tr>
+          <td><h3>${data['Property']['Price']}</h3></td>
+        </tr>
+        <tr>
+          <td>
+            <img src="${photoUrl}" alt="Smiley face" height="150" width="150">
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <span>面积:${size}</span>
+          </td>
+          <td>
+            <span>卧室:${bd}</span>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <span>卫生间:${bath}</span>
+          </td>
+          <td>
+            <span>类型:${type}</span>
+          </td>
+        </tr>
+       </table>
+      `;
+    }
+
+    let getListing = (page, region, fn) => {
+      $.post("https://api2.realtor.ca/Listing.svc/PropertySearch_Post", 
+        region == 1? richmondPost:bbyPost, (data) => {
+        fn(data);
+      });
+    }
+
+    let loadRegion = (region) => {
+      $(".loader").show();
+      getListing(1, region, (data) => {
+        let total = data.Paging.TotalRecords;
+        let pages = Math.ceil(total / 200);
+        for (let i = 1; i <= pages; i++) {
+          getListing(i, region, (data) => {
+            let parsed = data["Results"].map((r) => {
+              r['Property']['Address'] = genMarker(r['Property']['Address']);
+              return r;
+            });
+            let markers = [];
+            try {
+              parsed.forEach(data => {
+                let popup = getPopup(data);
+                let infoWindow = new BMap.InfoWindow(popup, {width: 300});  
+                infoWindow.disableAutoPan();
+                let m = data['Property']['Address'];
+                m.addEventListener('mouseover', e => {
+                  m.openInfoWindow(infoWindow);
+                });
+                m.addEventListener('mouseout', e => {
+                  m.closeInfoWindow();
+                });
+                m.addEventListener('click', e => {
+                  window.open(baseUrl + data.RelativeDetailsURL, "_blank"); 
+                });
+                markers.push(m);
+                map.addOverlay(m);
+              });
+            } catch(err) {
+              console.error(err);
+            }
+          });
+          if (i == pages) {
+            $(".loader").hide();
+          }
+        }
+      });
+    }
+
+    loadRegion(1);
+
+  
+  });
+</script>
+
+</body>  
+</html>
